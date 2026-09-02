@@ -1,0 +1,59 @@
+name: Release Anime Wallpaper
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish Self-Contained Win-x64
+        run: >
+          dotnet publish -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o ./publish
+
+      - name: Package Release ZIP
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "${{ github.event.inputs.version }}" }
+          $zipName = "AnimeWallpaper-$tag-win-x64.zip"
+          Copy-Item -Path "README.md", "LICENSE" -Destination "./publish" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "./publish/*" -DestinationPath "./$zipName" -Force
+          Write-Output "RELEASE_ZIP=$zipName" >> $env:GITHUB_ENV
+          Write-Output "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.RELEASE_ZIP }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Anime Wallpaper ${{ env.RELEASE_TAG }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
