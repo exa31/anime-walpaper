@@ -215,7 +215,14 @@ public class MainViewModel : ViewModelBase
     public bool ShowNotifications
     {
         get => _showNotifications;
-        set => SetField(ref _showNotifications, value);
+        set
+        {
+            if (SetField(ref _showNotifications, value))
+            {
+                _configService.Config.ShowNotifications = value;
+                _configService.SaveConfig();
+            }
+        }
     }
 
     #endregion

@@ -507,6 +507,7 @@
                             <CheckBox IsChecked="{Binding Random}" Content="Random wallpaper rotation" />
                             <CheckBox IsChecked="{Binding SfwOnly}" Content="SFW only (Safe for work)" />
                             <CheckBox IsChecked="{Binding StartWithWindows}" Content="Start with Windows (System Tray)" />
+                            <CheckBox IsChecked="{Binding ShowNotifications}" Content="Show notification when wallpaper changes" />
                         </StackPanel>
 
                         <!-- Optional Wallhaven API Key -->
