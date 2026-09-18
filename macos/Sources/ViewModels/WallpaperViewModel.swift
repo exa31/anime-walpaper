@@ -52,6 +52,27 @@ public final class WallpaperViewModel: ObservableObject {
         // Sync startup setting with actual LaunchAgent state
         self.config.startWithMac = startupService.isEnabled()
 
+        // Reapply wallpaper when spaces change or screen parameters/monitors reconnect
+        NotificationCenter.default.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reapplyCurrentWallpaper()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reapplyCurrentWallpaper()
+            }
+        }
+
         scheduleRotationTimer()
         startCountdownTimer()
 
@@ -186,6 +207,13 @@ public final class WallpaperViewModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
+    public func reapplyCurrentWallpaper() {
+        guard !state.currentWallpaperPath.isEmpty,
+              FileManager.default.fileExists(atPath: state.currentWallpaperPath) else { return }
+        Logger.info("Re-applying wallpaper across screens on space/screen configuration change.")
+        _ = wallpaperService.setDesktopWallpaper(filePath: state.currentWallpaperPath)
+    }
+
     public func revealCurrentInFinder() {
         guard !state.currentWallpaperPath.isEmpty,
               FileManager.default.fileExists(atPath: state.currentWallpaperPath) else { return }
@@ -201,20 +229,24 @@ public final class WallpaperViewModel: ObservableObject {
         let interval = TimeInterval(minutes * 60)
         nextRotationDate = Date().addingTimeInterval(interval)
 
-        rotationTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.rotateWallpaper(force: false)
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        rotationTimer = timer
     }
 
     private func startCountdownTimer() {
         countdownTimer?.invalidate()
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateCountdown()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        countdownTimer = timer
     }
 
     private func updateCountdown() {

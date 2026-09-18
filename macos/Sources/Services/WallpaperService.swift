@@ -77,6 +77,9 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
             }
             try FileManager.default.moveItem(at: tempFile, to: targetFile)
 
+            // Ensure file has 0644 permissions so WallpaperAgent and WindowServer can read it
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: targetFile.path)
+
             Logger.info("Successfully cached wallpaper \(id) (\(size / 1024) KB) -> \(targetFileName)")
             return targetFile.path
         } catch {
@@ -92,6 +95,9 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
             return false
         }
 
+        // Guarantee 0644 permissions before applying
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: filePath)
+
         let fileUrl = URL(fileURLWithPath: filePath)
         let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
             .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
@@ -105,6 +111,14 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
         for (index, screen) in screens.enumerated() {
             do {
                 try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: options)
+                
+                // Verify that macOS applied it; if not, retry with default options
+                let currentURL = NSWorkspace.shared.desktopImageURL(for: screen)
+                if currentURL?.path != fileUrl.path {
+                    Logger.warn("Screen \(index) [\(screen.localizedName)] URL mismatch, retrying without options...")
+                    try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: [:])
+                }
+                
                 Logger.info("Successfully set wallpaper on Screen \(index) [\(screen.localizedName)]")
                 anySuccess = true
             } catch {
