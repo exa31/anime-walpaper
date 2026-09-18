@@ -1,11 +1,12 @@
 # 🌸 Anime Wallpaper
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+[![Platforms](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20%7C%20macOS%2013+-0078D6.svg)](https://github.com/exa31/anime-walpaper)
+[![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-blue.svg)](https://dotnet.microsoft.com/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg)](https://microsoft.com/windows)
 [![Release](https://img.shields.io/github/v/release/exa31/anime-walpaper?color=green&include_prereleases)](https://github.com/exa31/anime-walpaper/releases)
 
-A modern, lightweight Windows desktop application that automatically fetches and rotates stunning anime wallpapers directly from the **Wallhaven API** to your desktop background at configurable intervals. Runs smoothly in the Windows System Tray with zero performance overhead.
+A modern, ultra-lightweight desktop application for **Windows** and **macOS** that automatically fetches and rotates stunning anime wallpapers directly from the **Wallhaven API** to your desktop background at configurable intervals. Runs smoothly in the Windows System Tray or macOS Menu Bar with near-zero resource usage.
 
 ---
 
@@ -15,49 +16,49 @@ A modern, lightweight Windows desktop application that automatically fetches and
 - 🖼️ **Live Preview & Metadata**: Displays current wallpaper thumbnail, Wallhaven ID, resolution, last changed timestamp, and file size.
 - 🎯 **Preset Query Chips**: Quick one-click category presets (`anime`, `anime girl`, `cyberpunk anime`, `landscape anime`, `studio ghibli`, `nature anime`, `makoto shinkai`) or enter any custom search tags.
 - 🛡️ **SFW & Resolution Filtering**: Guarantees family-safe wallpapers (`purity=100`) and lets you set minimum desktop resolutions (e.g. 1920×1080, 2560×1440, 3840×2160).
-- 📥 **Smart Cache Management**: Saves wallpapers into `%USERPROFILE%\Pictures\AnimeWallpapers`. Keeps up to a configurable limit (default 20), automatically purging the oldest cached images while strictly preserving the currently active wallpaper.
-- 🔔 **Windows System Tray & Notifications**: Closes to the System Tray to keep your taskbar clean. Includes a right-click tray menu (Next Wallpaper, Pause/Resume, Open Settings, Open Cache, Exit) and sends balloon tip notifications when a new wallpaper is applied.
-- 🚀 **Auto-Start With Windows**: Toggle automatic startup at login via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` without requiring administrator privileges.
-- 🪵 **Safe Rolling Logging**: Logs rotation events and errors to `%LOCALAPPDATA%\AnimeWallpaper\logs\` while automatically masking your API key.
-- ⚡ **Self-Contained Executable**: Single portable `.exe` ready to run on Windows 10 & 11 without needing any pre-installed .NET runtimes.
+- 📥 **Smart Cache Management**: Saves wallpapers into `%USERPROFILE%\Pictures\AnimeWallpapers` (Windows) or `~/Pictures/AnimeWallpapers` (macOS). Keeps up to a configurable limit (default 20), automatically purging the oldest cached images while strictly preserving the currently active wallpaper.
+- 🔔 **System Tray & Menu Bar Integration**: 
+  - **macOS**: Native SwiftUI Menu Bar app with frosted-glass popover window, zero Dock clutter (`LSUIElement`), and native Cocoa wallpaper switching.
+  - **Windows**: Closes to the System Tray with right-click context menu and balloon tip notifications.
+- 🚀 **Auto-Start at Login**: Toggle automatic startup (Windows Registry / macOS LaunchAgent) without requiring administrator privileges.
+- 🪵 **Safe Rolling Logging**: Logs rotation events and errors while automatically masking your API key.
 
 ---
 
-## 📥 Download & Installation
+## 🍏 macOS Usage & Build
 
-### Option 1: Pre-built Executable (Recommended)
-1. Go to the [**GitHub Releases**](https://github.com/exa31/anime-wallpaper/releases) page.
+### Running / Building on macOS
+The macOS version is built in native **Swift & SwiftUI** and requires macOS 13.0 or newer.
+
+```bash
+# 1. Build and package into Anime Wallpaper.app
+./scripts/build-macos.sh 1.0.0
+
+# 2. Open the app
+open "dist/macos/Anime Wallpaper.app"
+```
+
+The app icon (`🌸` / `✨`) will appear in your top Menu Bar. Click it to view the live preview, rotate wallpapers, choose preset query chips, or configure settings.
+
+---
+
+## 🪟 Windows Usage & Build
+
+### Option 1: Pre-built Executable (Windows)
+1. Go to the [**GitHub Releases**](https://github.com/exa31/anime-walpaper/releases) page.
 2. Download `AnimeWallpaper-v1.0.0-win-x64.zip`.
-3. Extract the ZIP to any folder (e.g. `C:\Program Files\AnimeWallpaper` or `%LOCALAPPDATA%\Programs\AnimeWallpaper`).
-4. Run `AnimeWallpaper.exe`.
+3. Extract and run `AnimeWallpaper.exe`.
 
-### Option 2: Build from Source
-Ensure [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) is installed on your Windows machine.
-
+### Option 2: Build from Source (.NET 8 SDK)
 ```powershell
-# Clone the repository
-git clone https://github.com/exa31/anime-walpaper.git
-cd "anime-walpaper"
-
 # Restore and run in development mode
 dotnet restore
 dotnet run
-```
 
----
-
-## 🛠️ Build & Publishing
-
-### Build Debug / Release DLLs
-```powershell
-dotnet build -c Release
-```
-
-### Publish Standalone Self-Contained `.exe`
-```powershell
+# Publish Standalone Self-Contained .exe
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./dist/publish
 ```
-The output file `./dist/publish/AnimeWallpaper.exe` is completely self-contained and ready to be distributed.
+
 
 ### Automated Packaging Script
 Run the automated packaging script in PowerShell to produce a ready-to-release ZIP archive with SHA256 checksums:

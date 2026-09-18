@@ -4,6 +4,8 @@ obj/
 dist/
 publish/
 out/
+.build/
+macos/.build/
 
 ## Visual Studio
 .vs/

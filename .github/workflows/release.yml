@@ -15,9 +15,9 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
+    name: Build Windows (win-x64)
     runs-on: windows-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,15 +45,69 @@ jobs:
           $zipName = "AnimeWallpaper-$tag-win-x64.zip"
           Copy-Item -Path "README.md", "LICENSE" -Destination "./publish" -ErrorAction SilentlyContinue
           Compress-Archive -Path "./publish/*" -DestinationPath "./$zipName" -Force
-          Write-Output "RELEASE_ZIP=$zipName" >> $env:GITHUB_ENV
-          Write-Output "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          mkdir artifacts
+          Move-Item -Path "./$zipName" -Destination "./artifacts/"
+          Copy-Item -Path "./publish/AnimeWallpaper.exe" -Destination "./artifacts/"
 
-      - name: Create GitHub Release
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: ./artifacts/*
+
+  build-macos:
+    name: Build macOS (arm64)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and Package macOS App
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}"
+          chmod +x ./scripts/build-macos.sh
+          ./scripts/build-macos.sh "$TAG"
+
+      - name: Prepare macOS Artifacts
+        run: |
+          mkdir artifacts
+          cp dist/macos/*.zip artifacts/
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: ./artifacts/*
+
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-files
+
+      - name: Prepare Release Assets & Checksums
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}"
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          
+          mkdir -p ./dist-release
+          find ./release-files -type f -exec cp {} ./dist-release/ \;
+          
+          cd ./dist-release
+          sha256sum * > SHA256SUMS.txt
+          ls -la
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ${{ env.RELEASE_ZIP }}
-            ./publish/AnimeWallpaper.exe
+          files: ./dist-release/*
           tag_name: ${{ env.RELEASE_TAG }}
           name: Anime Wallpaper ${{ env.RELEASE_TAG }}
           draft: false
