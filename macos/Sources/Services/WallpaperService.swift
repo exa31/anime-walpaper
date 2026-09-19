@@ -99,24 +99,23 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
         try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: filePath)
 
         let fileUrl = URL(fileURLWithPath: filePath)
-        let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
-            .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
-            .allowClipping: true
-        ]
-
         var anySuccess = false
         let screens = NSScreen.screens
         Logger.info("Applying wallpaper to \(screens.count) screen(s): \(filePath)")
 
         for (index, screen) in screens.enumerated() {
             do {
-                try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: options)
+                try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: [:])
                 
-                // Verify that macOS applied it; if not, retry with default options
+                // Verify that macOS applied it; if not, retry with scaling options
                 let currentURL = NSWorkspace.shared.desktopImageURL(for: screen)
                 if currentURL?.path != fileUrl.path {
-                    Logger.warn("Screen \(index) [\(screen.localizedName)] URL mismatch, retrying without options...")
-                    try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: [:])
+                    Logger.warn("Screen \(index) [\(screen.localizedName)] URL mismatch, retrying with scaling options...")
+                    let fallbackOptions: [NSWorkspace.DesktopImageOptionKey: Any] = [
+                        .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
+                        .allowClipping: true
+                    ]
+                    try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: fallbackOptions)
                 }
                 
                 Logger.info("Successfully set wallpaper on Screen \(index) [\(screen.localizedName)]")

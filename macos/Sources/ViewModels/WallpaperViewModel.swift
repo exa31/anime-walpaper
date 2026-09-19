@@ -20,6 +20,7 @@ public final class WallpaperViewModel: ObservableObject {
     private var rotationTimer: Timer?
     private var countdownTimer: Timer?
     private var nextRotationDate: Date?
+    private var screenSyncTask: Task<Void, Never>?
 
     public static let presetQueries = [
         "anime",
@@ -52,8 +53,21 @@ public final class WallpaperViewModel: ObservableObject {
         // Sync startup setting with actual LaunchAgent state
         self.config.startWithMac = startupService.isEnabled()
 
-        // Reapply wallpaper when spaces change or screen parameters/monitors reconnect
+        // Reapply wallpaper when screen parameters/monitors connect or disconnect
         NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleScreenConfigurationChange()
+            }
+        }
+
+        // NSWorkspace notifications MUST be observed on NSWorkspace.shared.notificationCenter
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+
+        workspaceCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
             queue: .main
@@ -63,13 +77,23 @@ public final class WallpaperViewModel: ObservableObject {
             }
         }
 
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
+        workspaceCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.reapplyCurrentWallpaper()
+                self?.handleScreenConfigurationChange()
+            }
+        }
+
+        workspaceCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleScreenConfigurationChange()
             }
         }
 
@@ -212,6 +236,31 @@ public final class WallpaperViewModel: ObservableObject {
               FileManager.default.fileExists(atPath: state.currentWallpaperPath) else { return }
         Logger.info("Re-applying wallpaper across screens on space/screen configuration change.")
         _ = wallpaperService.setDesktopWallpaper(filePath: state.currentWallpaperPath)
+    }
+
+    public func handleScreenConfigurationChange() {
+        let screens = NSScreen.screens
+        Logger.info("Screen configuration change detected. Active display count: \(screens.count)")
+
+        screenSyncTask?.cancel()
+        screenSyncTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+
+            // 1. Immediate sync attempt
+            self.reapplyCurrentWallpaper()
+
+            // 2. macOS WindowServer and WallpaperAgent negotiation buffer (1.2 seconds)
+            // When an external screen connects, macOS often asynchronously restores its previous
+            // cached wallpaper 500ms-1500ms after plug-in. This retry ensures our active wallpaper prevails.
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            self.reapplyCurrentWallpaper()
+
+            // 3. Final verification buffer (2.5 seconds total)
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+            guard !Task.isCancelled else { return }
+            self.reapplyCurrentWallpaper()
+        }
     }
 
     public func revealCurrentInFinder() {
