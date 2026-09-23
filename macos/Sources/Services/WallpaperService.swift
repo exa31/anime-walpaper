@@ -103,21 +103,14 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
         let screens = NSScreen.screens
         Logger.info("Applying wallpaper to \(screens.count) screen(s): \(filePath)")
 
+        let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
+            .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
+            .allowClipping: true
+        ]
+
         for (index, screen) in screens.enumerated() {
             do {
-                try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: [:])
-                
-                // Verify that macOS applied it; if not, retry with scaling options
-                let currentURL = NSWorkspace.shared.desktopImageURL(for: screen)
-                if currentURL?.path != fileUrl.path {
-                    Logger.warn("Screen \(index) [\(screen.localizedName)] URL mismatch, retrying with scaling options...")
-                    let fallbackOptions: [NSWorkspace.DesktopImageOptionKey: Any] = [
-                        .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
-                        .allowClipping: true
-                    ]
-                    try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: fallbackOptions)
-                }
-                
+                try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: options)
                 Logger.info("Successfully set wallpaper on Screen \(index) [\(screen.localizedName)]")
                 anySuccess = true
             } catch {

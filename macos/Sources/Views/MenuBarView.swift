@@ -46,28 +46,29 @@ public struct MenuBarView: View {
 
                 Spacer()
 
-                // Next Rotation badge
-                HStack(spacing: 4) {
-                    Image(systemName: vm.state.isPaused ? "pause.fill" : "clock.fill")
-                        .font(.caption2)
-                    Text(vm.nextRotationText)
-                        .font(.caption)
-                        .monospacedDigit()
+                // Next Rotation badge with TimelineView (only updates when popover is open)
+                TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                    HStack(spacing: 4) {
+                        Image(systemName: vm.state.isPaused ? "pause.fill" : "clock.fill")
+                            .font(.caption2)
+                        Text(vm.getNextRotationText(at: context.date))
+                            .font(.caption)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(vm.state.isPaused ? Color.orange.opacity(0.15) : Color.pink.opacity(0.15))
+                    .foregroundColor(vm.state.isPaused ? .orange : .pink)
+                    .clipShape(Capsule())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(vm.state.isPaused ? Color.orange.opacity(0.15) : Color.pink.opacity(0.15))
-                .foregroundColor(vm.state.isPaused ? .orange : .pink)
-                .clipShape(Capsule())
             }
             .padding(.horizontal, 14)
             .padding(.top, 14)
 
-            // Current Wallpaper Preview
+            // Current Wallpaper Preview using cached downsampled thumbnail
             ZStack(alignment: .bottomLeading) {
-                if !vm.state.currentWallpaperPath.isEmpty,
-                   let nsImage = NSImage(contentsOfFile: vm.state.currentWallpaperPath) {
-                    Image(nsImage: nsImage)
+                if let previewImage = vm.currentPreviewImage {
+                    Image(nsImage: previewImage)
                         .resizable()
                         .aspectRatio(16/9, contentMode: .fill)
                         .frame(height: 150)
@@ -75,7 +76,6 @@ public struct MenuBarView: View {
                         .clipped()
                         .cornerRadius(10)
                         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                        .id(vm.state.currentWallpaperPath)
                 } else {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.secondary.opacity(0.15))

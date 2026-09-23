@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 import Combine
+import ImageIO
+import AppKit
 
 @MainActor
 public final class WallpaperViewModel: ObservableObject {
@@ -9,7 +11,9 @@ public final class WallpaperViewModel: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var statusMessage: String = "Ready"
     @Published public var cachedCount: Int = 0
-    @Published public var nextRotationText: String = ""
+    @Published public var currentPreviewImage: NSImage? = nil
+
+    public var nextRotationDate: Date?
 
     private let wallhavenService: WallhavenServiceProtocol
     private let wallpaperService: WallpaperServiceProtocol
@@ -18,8 +22,6 @@ public final class WallpaperViewModel: ObservableObject {
     private let notificationService: NotificationService
 
     private var rotationTimer: Timer?
-    private var countdownTimer: Timer?
-    private var nextRotationDate: Date?
     private var screenSyncTask: Task<Void, Never>?
 
     public static let presetQueries = [
@@ -53,6 +55,11 @@ public final class WallpaperViewModel: ObservableObject {
         // Sync startup setting with actual LaunchAgent state
         self.config.startWithMac = startupService.isEnabled()
 
+        // Load preview thumbnail if existing wallpaper is available
+        if !state.currentWallpaperPath.isEmpty && FileManager.default.fileExists(atPath: state.currentWallpaperPath) {
+            loadPreviewImage(from: state.currentWallpaperPath)
+        }
+
         // Reapply wallpaper when screen parameters/monitors connect or disconnect
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -64,18 +71,7 @@ public final class WallpaperViewModel: ObservableObject {
             }
         }
 
-        // NSWorkspace notifications MUST be observed on NSWorkspace.shared.notificationCenter
         let workspaceCenter = NSWorkspace.shared.notificationCenter
-
-        workspaceCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.reapplyCurrentWallpaper()
-            }
-        }
 
         workspaceCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -98,7 +94,6 @@ public final class WallpaperViewModel: ObservableObject {
         }
 
         scheduleRotationTimer()
-        startCountdownTimer()
 
         // Initial wallpaper fetch if no wallpaper is set yet
         if state.currentWallpaperPath.isEmpty || !FileManager.default.fileExists(atPath: state.currentWallpaperPath) {
@@ -128,7 +123,6 @@ public final class WallpaperViewModel: ObservableObject {
         if state.isPaused {
             statusMessage = "Paused"
             nextRotationDate = nil
-            nextRotationText = "Paused"
             rotationTimer?.invalidate()
             rotationTimer = nil
         } else {
@@ -199,6 +193,9 @@ public final class WallpaperViewModel: ObservableObject {
                 wallpaperService.pruneCache(maxWallpapers: config.maxCachedWallpapers, currentWallpaperPath: filePath)
                 cachedCount = wallpaperService.getCachedCount()
 
+                // Efficiently downsample and update cached thumbnail preview
+                loadPreviewImage(from: filePath)
+
                 if config.showNotifications {
                     notificationService.sendWallpaperNotification(id: selected.id, resolution: res)
                 }
@@ -234,7 +231,7 @@ public final class WallpaperViewModel: ObservableObject {
     public func reapplyCurrentWallpaper() {
         guard !state.currentWallpaperPath.isEmpty,
               FileManager.default.fileExists(atPath: state.currentWallpaperPath) else { return }
-        Logger.info("Re-applying wallpaper across screens on space/screen configuration change.")
+        Logger.info("Re-applying wallpaper across screens on display/screen configuration change.")
         _ = wallpaperService.setDesktopWallpaper(filePath: state.currentWallpaperPath)
     }
 
@@ -246,18 +243,10 @@ public final class WallpaperViewModel: ObservableObject {
         screenSyncTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
 
-            // 1. Immediate sync attempt
             self.reapplyCurrentWallpaper()
 
-            // 2. macOS WindowServer and WallpaperAgent negotiation buffer (1.2 seconds)
-            // When an external screen connects, macOS often asynchronously restores its previous
-            // cached wallpaper 500ms-1500ms after plug-in. This retry ensures our active wallpaper prevails.
+            // Negotiate external screen reconnection buffer
             try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard !Task.isCancelled else { return }
-            self.reapplyCurrentWallpaper()
-
-            // 3. Final verification buffer (2.5 seconds total)
-            try? await Task.sleep(nanoseconds: 1_300_000_000)
             guard !Task.isCancelled else { return }
             self.reapplyCurrentWallpaper()
         }
@@ -267,6 +256,62 @@ public final class WallpaperViewModel: ObservableObject {
         guard !state.currentWallpaperPath.isEmpty,
               FileManager.default.fileExists(atPath: state.currentWallpaperPath) else { return }
         NSWorkspace.shared.selectFile(state.currentWallpaperPath, inFileViewerRootedAtPath: "")
+    }
+
+    public func loadPreviewImage(from path: String) {
+        guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else {
+            self.currentPreviewImage = nil
+            return
+        }
+
+        Task.detached(priority: .userInitiated) {
+            let fileURL = URL(fileURLWithPath: path)
+            let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+            guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, imageSourceOptions) else {
+                return
+            }
+
+            let maxDimensionInPixels: CGFloat = 640
+            let downsampleOptions = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxDimensionInPixels
+            ] as [CFString: Any] as CFDictionary
+
+            guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
+                return
+            }
+
+            let thumbnail = NSImage(cgImage: downsampledImage, size: NSSize(width: downsampledImage.width, height: downsampledImage.height))
+            await MainActor.run { [weak self] in
+                self?.currentPreviewImage = thumbnail
+            }
+        }
+    }
+
+    public func getNextRotationText(at date: Date = Date()) -> String {
+        if state.isPaused {
+            return "Paused"
+        }
+        guard let target = nextRotationDate else {
+            return "Calculating..."
+        }
+
+        let remaining = Int(target.timeIntervalSince(date))
+        if remaining <= 0 {
+            return "Rotating soon..."
+        } else {
+            let m = remaining / 60
+            let s = remaining % 60
+            if m >= 60 {
+                let h = m / 60
+                let remM = m % 60
+                return "\(h)h \(remM)m"
+            } else {
+                return String(format: "%02d:%02d", m, s)
+            }
+        }
     }
 
     private func scheduleRotationTimer() {
@@ -285,42 +330,5 @@ public final class WallpaperViewModel: ObservableObject {
         }
         RunLoop.main.add(timer, forMode: .common)
         rotationTimer = timer
-    }
-
-    private func startCountdownTimer() {
-        countdownTimer?.invalidate()
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateCountdown()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        countdownTimer = timer
-    }
-
-    private func updateCountdown() {
-        if state.isPaused {
-            nextRotationText = "Paused"
-            return
-        }
-        guard let target = nextRotationDate else {
-            nextRotationText = "Calculating..."
-            return
-        }
-
-        let remaining = Int(target.timeIntervalSinceNow)
-        if remaining <= 0 {
-            nextRotationText = "Rotating soon..."
-        } else {
-            let m = remaining / 60
-            let s = remaining % 60
-            if m >= 60 {
-                let h = m / 60
-                let remM = m % 60
-                nextRotationText = "\(h)h \(remM)m"
-            } else {
-                nextRotationText = String(format: "%02d:%02d", m, s)
-            }
-        }
     }
 }
