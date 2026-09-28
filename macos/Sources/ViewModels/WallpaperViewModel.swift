@@ -52,12 +52,24 @@ public final class WallpaperViewModel: ObservableObject {
 
         self.cachedCount = wallpaperService.getCachedCount()
 
-        // Sync startup setting with actual LaunchAgent state
-        self.config.startWithMac = startupService.isEnabled()
+        // Sync startup setting with actual system startup state
+        if config.startWithMac {
+            if !startupService.isEnabled() {
+                startupService.setEnabled(true)
+            }
+        } else {
+            self.config.startWithMac = startupService.isEnabled()
+        }
 
-        // Load preview thumbnail if existing wallpaper is available
+        // Load preview thumbnail and reapply saved wallpaper across screens on app launch
         if !state.currentWallpaperPath.isEmpty && FileManager.default.fileExists(atPath: state.currentWallpaperPath) {
             loadPreviewImage(from: state.currentWallpaperPath)
+
+            Task { @MainActor [weak self] in
+                // Small buffer to allow macOS WindowServer and external displays to settle
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                self?.reapplyCurrentWallpaper()
+            }
         }
 
         // Reapply wallpaper when screen parameters/monitors connect or disconnect

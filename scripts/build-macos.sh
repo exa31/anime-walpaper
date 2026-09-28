@@ -85,6 +85,18 @@ cat <<EOF > "$BUNDLE_DIR/Contents/Info.plist"
 </plist>
 EOF
 
+# 6. Ad-hoc codesign bundle
+echo "🔏 Applying ad-hoc code signature..."
+codesign --force --deep --sign - "$BUNDLE_DIR" > /dev/null 2>&1 || true
+
+# 7. Install to /Applications if writable
+if [ -w "/Applications" ]; then
+    echo "📲 Installing to /Applications/$APP_NAME.app..."
+    rm -rf "/Applications/$APP_NAME.app"
+    cp -R "$BUNDLE_DIR" "/Applications/$APP_NAME.app"
+    codesign --force --deep --sign - "/Applications/$APP_NAME.app" > /dev/null 2>&1 || true
+fi
+
 echo "📦 Packaging ZIP archive..."
 cd "$DIST_DIR"
 ZIP_NAME="AnimeWallpaper-$TAG-macos-arm64.zip"
@@ -93,4 +105,7 @@ zip -r -q -y "$ZIP_NAME" "$APP_NAME.app"
 
 echo "✨ Build succeeded!"
 echo "📍 Application Bundle: $BUNDLE_DIR"
+if [ -d "/Applications/$APP_NAME.app" ]; then
+    echo "🚀 Installed in:       /Applications/$APP_NAME.app"
+fi
 echo "📦 Distributable ZIP:   $DIST_DIR/$ZIP_NAME"
