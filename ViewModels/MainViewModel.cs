@@ -390,10 +390,10 @@ public class MainViewModel : ViewModelBase
 
     private void OnEngineStatusChanged(string status)
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             UpdateStatusBadge(status);
-        });
+        }));
     }
 
     private void UpdateStatusBadge(string status)
@@ -421,15 +421,15 @@ public class MainViewModel : ViewModelBase
 
     private void OnEngineCountdownTicked(TimeSpan remaining)
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             CountdownText = $"{(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
-        });
+        }));
     }
 
     private void OnEngineWallpaperChanged(WallhavenItem item, string filePath)
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             LoadImageSafe(filePath);
             WallpaperId = item.Id;
@@ -448,15 +448,15 @@ public class MainViewModel : ViewModelBase
 
             UserNotification = $"Changed wallpaper to #{item.Id}";
             UpdateCacheCount();
-        });
+        }));
     }
 
     private void OnEngineErrorOccurred(string error)
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             UserNotification = error;
-        });
+        }));
     }
 
     private void UpdateCacheCount()
@@ -473,6 +473,7 @@ public class MainViewModel : ViewModelBase
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.DecodePixelWidth = 640; // Optimize RAM usage by decoding only thumbnail size
             bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
             bitmap.EndInit();
             bitmap.Freeze(); // Avoid thread-affinity locks

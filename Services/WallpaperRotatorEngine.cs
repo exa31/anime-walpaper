@@ -21,6 +21,7 @@ public class WallpaperRotatorEngine
     private int _secondsRemaining;
     private bool _isRotating;
     private string _status = "Initializing";
+    private DateTime? _lastRotationAttempt;
 
     public event Action<string>? StatusChanged;
     public event Action<TimeSpan>? CountdownTicked;
@@ -56,7 +57,30 @@ public class WallpaperRotatorEngine
             _startupService.SetAutoStart(_configService.Config.StartWithWindows);
         }
 
-        ResetCountdown();
+        // Listen for system resume from sleep/hibernation
+        try
+        {
+            Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Failed to subscribe to SystemEvents.PowerModeChanged: {ex.Message}");
+        }
+
+        bool hasActiveWallpaper = !string.IsNullOrEmpty(_configService.State.CurrentWallpaperPath) &&
+                                  File.Exists(_configService.State.CurrentWallpaperPath);
+
+        if (!hasActiveWallpaper)
+        {
+            Logger.Info("No active wallpaper detected. Initiating first wallpaper fetch...");
+            ResetCountdown(triggerIfExpired: false);
+            _ = Task.Run(() => TriggerRotationAsync(false));
+        }
+        else
+        {
+            Logger.Info($"Existing wallpaper active: {_configService.State.CurrentWallpaperId} ({_configService.State.CurrentWallpaperPath})");
+            ResetCountdown(triggerIfExpired: true);
+        }
 
         if (_configService.State.IsPaused)
         {
@@ -68,17 +92,17 @@ public class WallpaperRotatorEngine
             SetStatus("Running");
             _secondTimer.Start();
         }
+    }
 
-        // If no active wallpaper yet, rotate immediately in background
-        if (string.IsNullOrEmpty(_configService.State.CurrentWallpaperPath) ||
-            !File.Exists(_configService.State.CurrentWallpaperPath))
+    private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
         {
-            Logger.Info("No active wallpaper detected. Initiating first wallpaper fetch...");
-            _ = Task.Run(() => TriggerRotationAsync(false));
-        }
-        else
-        {
-            Logger.Info($"Existing wallpaper active: {_configService.State.CurrentWallpaperId} ({_configService.State.CurrentWallpaperPath})");
+            Logger.Info("System resumed from sleep/hibernation. Syncing rotation countdown...");
+            if (!_configService.State.IsPaused)
+            {
+                ResetCountdown(triggerIfExpired: true);
+            }
         }
     }
 
@@ -95,7 +119,7 @@ public class WallpaperRotatorEngine
     {
         _configService.State.IsPaused = false;
         _configService.SaveState();
-        ResetCountdown();
+        ResetCountdown(triggerIfExpired: true);
         _secondTimer.Start();
         SetStatus("Running");
         Logger.Info("Wallpaper rotator resumed.");
@@ -118,14 +142,53 @@ public class WallpaperRotatorEngine
     {
         _configService.Config.IntervalMinutes = Math.Max(1, minutes);
         _configService.SaveConfig();
-        ResetCountdown();
+        ResetCountdown(triggerIfExpired: true);
         Logger.Info($"Interval updated to {minutes} minutes.");
     }
 
-    private void ResetCountdown()
+    private void ResetCountdown(bool triggerIfExpired = true)
     {
         var intervalMinutes = Math.Max(1, _configService.Config.IntervalMinutes);
-        _secondsRemaining = intervalMinutes * 60;
+        var intervalSeconds = intervalMinutes * 60;
+        var now = DateTime.Now;
+
+        if (_configService.State.LastChanged.HasValue)
+        {
+            var elapsed = now - _configService.State.LastChanged.Value;
+            var remaining = intervalSeconds - (int)elapsed.TotalSeconds;
+
+            if (remaining <= 0)
+            {
+                // Interval has already elapsed since last change
+                Logger.Info($"Rotation interval elapsed ({(int)elapsed.TotalSeconds}s elapsed, interval {intervalSeconds}s).");
+
+                // Check retry delay to prevent rapid loop on failure
+                const int retryDelay = 60;
+                if (_lastRotationAttempt.HasValue && (now - _lastRotationAttempt.Value).TotalSeconds < retryDelay)
+                {
+                    _secondsRemaining = Math.Max(1, retryDelay - (int)(now - _lastRotationAttempt.Value).TotalSeconds);
+                    CountdownTicked?.Invoke(TimeRemaining);
+                    return;
+                }
+
+                _secondsRemaining = 0;
+                CountdownTicked?.Invoke(TimeRemaining);
+
+                if (triggerIfExpired && !_configService.State.IsPaused && !_isRotating)
+                {
+                    _ = Task.Run(() => TriggerRotationAsync(false));
+                }
+                return;
+            }
+
+            _secondsRemaining = remaining;
+            Logger.Info($"Countdown set to {remaining}s based on lastChanged: {_configService.State.LastChanged.Value}");
+        }
+        else
+        {
+            _secondsRemaining = intervalSeconds;
+        }
+
         CountdownTicked?.Invoke(TimeRemaining);
     }
 
@@ -141,8 +204,10 @@ public class WallpaperRotatorEngine
 
         if (_secondsRemaining <= 0)
         {
-            ResetCountdown();
-            _ = Task.Run(() => TriggerRotationAsync(false));
+            if (!_isRotating)
+            {
+                _ = Task.Run(() => TriggerRotationAsync(false));
+            }
         }
     }
 
@@ -155,6 +220,7 @@ public class WallpaperRotatorEngine
         }
 
         _isRotating = true;
+        _lastRotationAttempt = DateTime.Now;
         try
         {
             SetStatus("Searching Wallhaven...");
@@ -164,6 +230,7 @@ public class WallpaperRotatorEngine
             {
                 SetStatus("Connection failed");
                 ErrorOccurred?.Invoke("Failed to fetch wallpapers from Wallhaven. Retrying next cycle.");
+                ResetCountdown(triggerIfExpired: false);
                 return false;
             }
 
@@ -203,6 +270,7 @@ public class WallpaperRotatorEngine
             {
                 SetStatus("Download failed");
                 ErrorOccurred?.Invoke($"Failed to download wallpaper {selectedItem.Id}. Retrying next cycle.");
+                ResetCountdown(triggerIfExpired: false);
                 return false;
             }
 
@@ -213,6 +281,7 @@ public class WallpaperRotatorEngine
             {
                 SetStatus("Apply failed");
                 ErrorOccurred?.Invoke("Failed to set desktop wallpaper via Windows API.");
+                ResetCountdown(triggerIfExpired: false);
                 return false;
             }
 
@@ -226,9 +295,10 @@ public class WallpaperRotatorEngine
             _configService.State.CurrentResolution = selectedItem.Resolution;
             _configService.State.LastChanged = DateTime.Now;
             _configService.SaveState();
+            _lastRotationAttempt = null;
 
             // Reset interval countdown
-            ResetCountdown();
+            ResetCountdown(triggerIfExpired: false);
 
             SetStatus(_configService.State.IsPaused ? "Paused" : "Running");
             WallpaperChanged?.Invoke(selectedItem, downloadedPath);
@@ -241,6 +311,7 @@ public class WallpaperRotatorEngine
             Logger.Error("Exception during wallpaper rotation cycle", ex);
             SetStatus("Error");
             ErrorOccurred?.Invoke(ex.Message);
+            ResetCountdown(triggerIfExpired: false);
             return false;
         }
         finally

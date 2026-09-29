@@ -13,7 +13,7 @@ public final class WallpaperViewModel: ObservableObject {
     @Published public var cachedCount: Int = 0
     @Published public var currentPreviewImage: NSImage? = nil
 
-    public var nextRotationDate: Date?
+    @Published public var nextRotationDate: Date?
 
     private let wallhavenService: WallhavenServiceProtocol
     private let wallpaperService: WallpaperServiceProtocol
@@ -23,6 +23,7 @@ public final class WallpaperViewModel: ObservableObject {
 
     private var rotationTimer: Timer?
     private var screenSyncTask: Task<Void, Never>?
+    private var lastRotationAttempt: Date?
 
     public static let presetQueries = [
         "anime",
@@ -92,6 +93,7 @@ public final class WallpaperViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.handleScreenConfigurationChange()
+                self?.scheduleRotationTimer()
             }
         }
 
@@ -102,16 +104,17 @@ public final class WallpaperViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.handleScreenConfigurationChange()
+                self?.scheduleRotationTimer()
             }
         }
 
-        scheduleRotationTimer()
-
-        // Initial wallpaper fetch if no wallpaper is set yet
+        // Initial wallpaper fetch if no wallpaper is set yet, otherwise schedule rotation based on lastChanged
         if state.currentWallpaperPath.isEmpty || !FileManager.default.fileExists(atPath: state.currentWallpaperPath) {
             Task {
                 await rotateWallpaper(force: false)
             }
+        } else {
+            scheduleRotationTimer()
         }
     }
 
@@ -157,13 +160,17 @@ public final class WallpaperViewModel: ObservableObject {
         }
 
         isLoading = true
+        lastRotationAttempt = Date()
+        defer {
+            isLoading = false
+            scheduleRotationTimer()
+        }
         statusMessage = "Searching Wallhaven..."
 
         do {
             let items = try await wallhavenService.searchWallpapers(config: config)
             if items.isEmpty {
                 statusMessage = "No wallpapers found"
-                isLoading = false
                 return
             }
 
@@ -177,7 +184,6 @@ public final class WallpaperViewModel: ObservableObject {
 
             guard let selected = candidate else {
                 statusMessage = "No suitable wallpaper found"
-                isLoading = false
                 return
             }
 
@@ -186,7 +192,6 @@ public final class WallpaperViewModel: ObservableObject {
 
             guard let filePath = imagePath else {
                 statusMessage = "Download failed"
-                isLoading = false
                 return
             }
 
@@ -200,6 +205,7 @@ public final class WallpaperViewModel: ObservableObject {
                 state.currentWallpaperPath = filePath
                 state.currentResolution = res
                 state.lastChanged = Date()
+                lastRotationAttempt = nil
 
                 configService.saveState(state)
                 wallpaperService.pruneCache(maxWallpapers: config.maxCachedWallpapers, currentWallpaperPath: filePath)
@@ -220,9 +226,6 @@ public final class WallpaperViewModel: ObservableObject {
             Logger.error("Failed rotating wallpaper", error: error)
             statusMessage = "Error: \(error.localizedDescription)"
         }
-
-        isLoading = false
-        scheduleRotationTimer()
     }
 
     public func openCacheFolder() {
@@ -330,17 +333,67 @@ public final class WallpaperViewModel: ObservableObject {
         rotationTimer?.invalidate()
         rotationTimer = nil
 
-        guard !state.isPaused else { return }
+        guard !state.isPaused else {
+            nextRotationDate = nil
+            return
+        }
+
         let minutes = max(1, config.intervalMinutes)
         let interval = TimeInterval(minutes * 60)
-        nextRotationDate = Date().addingTimeInterval(interval)
+        let now = Date()
 
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.rotateWallpaper(force: false)
+        if let lastChanged = state.lastChanged {
+            let elapsed = now.timeIntervalSince(lastChanged)
+            let remaining = interval - elapsed
+
+            if remaining <= 0 {
+                // The configured interval has already elapsed since last change
+                Logger.info("Rotation interval elapsed (\(Int(elapsed))s elapsed, interval \(Int(interval))s). Triggering rotation.")
+
+                // Prevent rapid loop if recent attempt failed
+                let retryDelay: TimeInterval = 60
+                if let lastAttempt = lastRotationAttempt, now.timeIntervalSince(lastAttempt) < retryDelay {
+                    let waitTime = max(1.0, retryDelay - now.timeIntervalSince(lastAttempt))
+                    nextRotationDate = now.addingTimeInterval(waitTime)
+                    let timer = Timer(timeInterval: waitTime, repeats: false) { [weak self] _ in
+                        Task { @MainActor [weak self] in
+                            await self?.rotateWallpaper(force: false)
+                        }
+                    }
+                    RunLoop.main.add(timer, forMode: .common)
+                    rotationTimer = timer
+                    return
+                }
+
+                nextRotationDate = now
+                Task { @MainActor [weak self] in
+                    await self?.rotateWallpaper(force: false)
+                }
+                return
+            } else {
+                // Resume timer with the remaining duration from last change
+                Logger.info("Scheduling rotation in \(Int(remaining))s based on lastChanged: \(lastChanged)")
+                nextRotationDate = now.addingTimeInterval(remaining)
+
+                let timer = Timer(timeInterval: remaining, repeats: false) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        await self?.rotateWallpaper(force: false)
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                rotationTimer = timer
             }
+        } else {
+            // First time or no recorded lastChanged: set timer for full interval
+            nextRotationDate = now.addingTimeInterval(interval)
+
+            let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.rotateWallpaper(force: false)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            rotationTimer = timer
         }
-        RunLoop.main.add(timer, forMode: .common)
-        rotationTimer = timer
     }
 }
