@@ -44,8 +44,21 @@ public class WallpaperService : IWallpaperService
 
     public async Task<string?> DownloadWallpaperAsync(string id, string imageUrl, CancellationToken cancellationToken = default)
     {
-        try
-        {
+            // Security validation
+            if (string.IsNullOrWhiteSpace(id) || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-zA-Z0-9_-]{1,64}$"))
+            {
+                Logger.Error($"Security warning: Blocked invalid wallpaper ID '{id}'");
+                return null;
+            }
+
+            if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var validatedUri) ||
+                validatedUri.Scheme != Uri.UriSchemeHttps ||
+                (!validatedUri.Host.Equals("wallhaven.cc", StringComparison.OrdinalIgnoreCase) && !validatedUri.Host.EndsWith(".wallhaven.cc", StringComparison.OrdinalIgnoreCase)))
+            {
+                Logger.Error($"Security warning: Blocked unauthorized or non-HTTPS wallpaper URL '{imageUrl}'");
+                return null;
+            }
+
             if (!Directory.Exists(CacheDirectory))
             {
                 Directory.CreateDirectory(CacheDirectory);
@@ -60,6 +73,15 @@ public class WallpaperService : IWallpaperService
 
             var targetFileName = $"wallhaven-{id}{ext}";
             var targetFilePath = Path.Combine(CacheDirectory, targetFileName);
+
+            var fullCacheDir = Path.GetFullPath(CacheDirectory) + Path.DirectorySeparatorChar;
+            var fullDestPath = Path.GetFullPath(targetFilePath);
+            if (!fullDestPath.StartsWith(fullCacheDir, StringComparison.OrdinalIgnoreCase) &&
+                !fullDestPath.Equals(Path.GetFullPath(CacheDirectory), StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Error($"Security warning: Target file path escapes cache directory: {targetFilePath}");
+                return null;
+            }
 
             // If file already exists and valid size, reuse
             if (File.Exists(targetFilePath))

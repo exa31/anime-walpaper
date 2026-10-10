@@ -15,8 +15,24 @@ permissions:
   contents: write
 
 jobs:
+  run-tests:
+    name: Run Tests & Security Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run .NET & Integration Tests
+        run: dotnet test tests/AnimeWallpaper.Tests/AnimeWallpaper.Tests.csproj --verbosity normal
+
   build-windows:
     name: Build Windows (win-x64)
+    needs: [run-tests]
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -57,6 +73,7 @@ jobs:
 
   build-macos:
     name: Build macOS (arm64)
+    needs: [run-tests]
     runs-on: macos-latest
     steps:
       - name: Checkout repository
@@ -79,9 +96,46 @@ jobs:
           name: macos-release
           path: ./artifacts/*
 
+  build-linux:
+    name: Build Linux (linux-x64)
+    needs: [run-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build and Publish Linux Binary
+        run: |
+          dotnet publish linux/AnimeWallpaper.Linux.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:EnableCompressionInSingleFile=true \
+            -o ./publish-linux
+          chmod +x ./publish-linux/anime-wallpaper
+
+      - name: Package Linux Tarball
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}"
+          TAR_NAME="AnimeWallpaper-$TAG-linux-x64.tar.gz"
+          mkdir -p artifacts
+          tar -czvf "artifacts/$TAR_NAME" -C ./publish-linux anime-wallpaper
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: ./artifacts/*
+
   release:
     name: Create GitHub Release
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

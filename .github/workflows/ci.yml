@@ -1,0 +1,45 @@
+name: CI Test Suite & Security Validation
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-dotnet:
+    name: .NET Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore tests/AnimeWallpaper.Tests/AnimeWallpaper.Tests.csproj
+
+      - name: Run xUnit & Security Integration Tests
+        run: dotnet test tests/AnimeWallpaper.Tests/AnimeWallpaper.Tests.csproj --verbosity normal --logger "console;verbosity=detailed"
+
+  test-macos-swift:
+    name: Swift & macOS Tests (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Swift Package Tests
+        working-directory: macos
+        run: swift test --parallel

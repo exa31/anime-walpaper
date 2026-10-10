@@ -28,14 +28,34 @@ public static class Logger
         Log("ERROR", fullMessage);
     }
 
+    private static readonly System.Text.RegularExpressions.Regex ApiKeyQueryRegex = new(
+        @"(?i)(apikey[=:])\s*([a-zA-Z0-9_\-]+)",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
+    private static readonly System.Text.RegularExpressions.Regex ApiKeyHeaderRegex = new(
+        @"(?i)(x-api-key\s*[:=]\s*)([a-zA-Z0-9_\-]+)",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+    );
+
+    public static string Sanitize(string message)
+    {
+        if (string.IsNullOrEmpty(message)) return string.Empty;
+        var result = message;
+        if (!string.IsNullOrEmpty(_configuredApiKey) && _configuredApiKey.Length >= 4)
+        {
+            result = result.Replace(_configuredApiKey, "[REDACTED_API_KEY]");
+        }
+        result = ApiKeyQueryRegex.Replace(result, "$1[REDACTED_API_KEY]");
+        result = ApiKeyHeaderRegex.Replace(result, "$1[REDACTED_API_KEY]");
+        return result;
+    }
+
     private static void Log(string level, string message)
     {
         try
         {
-            if (!string.IsNullOrEmpty(_configuredApiKey) && _configuredApiKey.Length >= 4)
-            {
-                message = message.Replace(_configuredApiKey, "***API_KEY_HIDDEN***");
-            }
+            message = Sanitize(message);
 
             var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}";
             Debug.WriteLine(line);

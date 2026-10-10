@@ -1,12 +1,13 @@
 # 🌸 Anime Wallpaper
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20%7C%20macOS%2013+-0078D6.svg)](https://github.com/exa31/anime-walpaper)
+[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-0078D6.svg)](https://github.com/exa31/anime-walpaper)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF.svg)](https://kotlinlang.org)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-blue.svg)](https://dotnet.microsoft.com/)
 [![Release](https://img.shields.io/github/v/release/exa31/anime-walpaper?color=green&include_prereleases)](https://github.com/exa31/anime-walpaper/releases)
 
-A modern, ultra-lightweight desktop application for **Windows** and **macOS** that automatically fetches and rotates stunning anime wallpapers directly from the **Wallhaven API** to your desktop background at configurable intervals. Runs smoothly in the Windows System Tray or macOS Menu Bar with near-zero resource usage.
+A modern, ultra-lightweight anime wallpaper rotator for **Windows**, **macOS**, **Linux**, **Android**, and **iOS** that automatically fetches and rotates stunning anime wallpapers directly from the **Wallhaven API** at configurable intervals. Runs smoothly across desktop system trays/menu bars and mobile operating systems with deep battery, memory, and data optimizations.
 
 ---
 
@@ -70,6 +71,46 @@ To automatically create a GitHub Release using the GitHub CLI (`gh`):
 ```powershell
 .\scripts\build-release.ps1 -Version "v1.0.0" -CreateGitHubRelease
 ```
+
+---
+
+## 🐧 Linux Usage & Daemon
+
+The Linux version is an ultra-lightweight CLI/Daemon built with **.NET 8** that auto-detects your Desktop Environment (GNOME, KDE Plasma, XFCE, Sway, Hyprland, feh).
+
+```bash
+# 1. Fetch & apply next wallpaper immediately
+anime-wallpaper --next
+
+# 2. Run as continuous background daemon
+anime-wallpaper --daemon
+
+# 3. Register as auto-start systemd user service
+anime-wallpaper --install-service
+```
+
+---
+
+## 📱 Android Usage & Build (Kotlin & Jetpack Compose)
+
+The native Android app lives in [`android/`](file:///Users/macbookair/projects/anime-walpaper/android/README.md).
+- **Background Engine**: Powered by Jetpack `WorkManager` (Doze & battery-friendly, unmetered Wi-Fi constraints).
+- **Mobile Optimized**: Auto-filters portrait ratios (`9x16, 10x16, 9x18`), loads WebP thumbnails with Coil, and downloads full-res on demand.
+- **Targets**: Apply to Home Screen, Lock Screen, or Both.
+
+```bash
+cd android
+./gradlew assembleDebug
+```
+
+---
+
+## 🍏 iOS Usage & Siri Shortcuts (Swift & SwiftUI)
+
+The native iOS app lives in [`ios/`](file:///Users/macbookair/projects/anime-walpaper/ios/README.md).
+- **Apple Siri Shortcuts**: Uses `AppIntent` (`FetchNextAnimeWallpaperIntent`) so iOS Automations can automatically rotate wallpapers at scheduled times or triggers without background battery drain.
+- **Interactive Mock Overlays**: Live preview raw artwork, Lock Screen (clock & widgets), or Home Screen (app grid).
+- **Save to Photos**: Direct 1-tap export via `PHPhotoLibrary`.
 
 ---
 
