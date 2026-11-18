@@ -65,6 +65,24 @@ jobs:
           Move-Item -Path "./$zipName" -Destination "./artifacts/"
           Copy-Item -Path "./publish/AnimeWallpaper.exe" -Destination "./artifacts/"
 
+      - name: Build MSI Installer (WiX)
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "${{ github.event.inputs.version }}" }
+          $cleanVersion = $tag.TrimStart('v')
+          if ($cleanVersion -notmatch '^\d+\.\d+\.\d+') { $cleanVersion = "1.0.0.0" }
+          elseif ($cleanVersion -match '^\d+\.\d+\.\d+$') { $cleanVersion = "$cleanVersion.0" }
+
+          $wixDir = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+          if (Test-Path $wixDir) { $env:PATH = "$wixDir;$env:PATH" }
+
+          $msiName = "AnimeWallpaper-$tag-win-x64.msi"
+          candle -nologo -dPublishDir="$(Get-Location)\publish" -dSourceDir="$(Get-Location)" -dProductVersion="$cleanVersion" .\installer\AnimeWallpaper.wxs -out .\installer\AnimeWallpaper.wixobj
+          light -nologo -ext WixUIExtension -sval .\installer\AnimeWallpaper.wixobj -out "./artifacts/$msiName"
+          if (Test-Path "./artifacts/$msiName") {
+            Copy-Item -Path "./artifacts/$msiName" -Destination "./artifacts/AnimeWallpaper-Installer.msi"
+          }
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
