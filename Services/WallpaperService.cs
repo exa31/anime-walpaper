@@ -45,6 +45,8 @@ public class WallpaperService : IWallpaperService
 
     public async Task<string?> DownloadWallpaperAsync(string id, string imageUrl, CancellationToken cancellationToken = default)
     {
+        try
+        {
             // Security validation
             if (string.IsNullOrWhiteSpace(id) || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-zA-Z0-9_-]{1,64}$"))
             {
