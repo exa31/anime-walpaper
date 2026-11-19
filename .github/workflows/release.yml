@@ -127,11 +127,11 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore AnimeWallpaper.csproj
 
       - name: Publish Self-Contained Win-x64
         run: >
-          dotnet publish -c Release -r win-x64 --self-contained true
+          dotnet publish AnimeWallpaper.csproj -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
