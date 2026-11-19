@@ -103,9 +103,28 @@ ZIP_NAME="AnimeWallpaper-$TAG-macos-arm64.zip"
 rm -f "$ZIP_NAME"
 zip -r -q -y "$ZIP_NAME" "$APP_NAME.app"
 
+echo "💿 Packaging DMG Disk Image..."
+DMG_TEMP="/tmp/AnimeWallpaper-dmg-root"
+rm -rf "$DMG_TEMP"
+mkdir -p "$DMG_TEMP"
+cp -R "$BUNDLE_DIR" "$DMG_TEMP/"
+ln -s /Applications "$DMG_TEMP/Applications"
+
+DMG_NAME="AnimeWallpaper-$TAG-macos-arm64.dmg"
+rm -f "$DIST_DIR/$DMG_NAME" "$DIST_DIR/AnimeWallpaper-Installer.dmg"
+hdiutil create -volname "AnimeWallpaper" \
+    -srcfolder "$DMG_TEMP" \
+    -ov -format UDZO \
+    "$DIST_DIR/$DMG_NAME" > /dev/null
+
+cp "$DIST_DIR/$DMG_NAME" "$DIST_DIR/AnimeWallpaper-Installer.dmg"
+rm -rf "$DMG_TEMP"
+
 echo "✨ Build succeeded!"
 echo "📍 Application Bundle: $BUNDLE_DIR"
 if [ -d "/Applications/$APP_NAME.app" ]; then
     echo "🚀 Installed in:       /Applications/$APP_NAME.app"
 fi
 echo "📦 Distributable ZIP:   $DIST_DIR/$ZIP_NAME"
+echo "💿 Distributable DMG:   $DIST_DIR/$DMG_NAME"
+echo "💿 Installer DMG:       $DIST_DIR/AnimeWallpaper-Installer.dmg"

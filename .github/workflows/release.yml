@@ -105,8 +105,9 @@ jobs:
 
       - name: Prepare macOS Artifacts
         run: |
-          mkdir artifacts
-          cp dist/macos/*.zip artifacts/
+          mkdir -p artifacts
+          cp dist/macos/*.zip artifacts/ || true
+          cp dist/macos/*.dmg artifacts/ || true
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
