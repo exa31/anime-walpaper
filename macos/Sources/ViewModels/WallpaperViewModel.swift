@@ -196,7 +196,7 @@ public final class WallpaperViewModel: ObservableObject {
             }
 
             statusMessage = "Setting desktop wallpaper..."
-            let applied = wallpaperService.setDesktopWallpaper(filePath: filePath)
+            let applied = wallpaperService.setDesktopWallpaper(filePath: filePath, mode: config.multiMonitorMode)
 
             if applied {
                 let res = selected.resolution ?? "\(selected.dimensionX ?? 0)x\(selected.dimensionY ?? 0)"
@@ -247,7 +247,7 @@ public final class WallpaperViewModel: ObservableObject {
         guard !state.currentWallpaperPath.isEmpty,
               FileManager.default.fileExists(atPath: state.currentWallpaperPath) else { return }
         Logger.info("Re-applying wallpaper across screens on display/screen configuration change.")
-        _ = wallpaperService.setDesktopWallpaper(filePath: state.currentWallpaperPath)
+        _ = wallpaperService.setDesktopWallpaper(filePath: state.currentWallpaperPath, mode: config.multiMonitorMode)
     }
 
     public func handleScreenConfigurationChange() {

@@ -92,6 +92,30 @@ public struct SettingsView: View {
                     .background(Color.secondary.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
+                    // Multi-Monitor Setup
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Multi-Monitor Mode", systemImage: "display.2")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.blue)
+
+                        Picker("", selection: Binding(
+                            get: { vm.config.multiMonitorMode },
+                            set: {
+                                vm.config.multiMonitorMode = $0
+                                vm.saveConfig()
+                            }
+                        )) {
+                            Text("Span (3 Monitor Jadi 1)").tag("Span")
+                            Text("Per-Monitor").tag("PerMonitor")
+                            Text("Duplicate").tag("Duplicate")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
                     // Minimum Resolution
                     VStack(alignment: .leading, spacing: 6) {
                         Label("Min Resolution", systemImage: "display")

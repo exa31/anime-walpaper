@@ -4,6 +4,7 @@ import AppKit
 public protocol WallpaperServiceProtocol: Sendable {
     var cacheDirectory: URL { get }
     func downloadWallpaper(id: String, imageUrl: String) async -> String?
+    func setDesktopWallpaper(filePath: String, mode: String) -> Bool
     func setDesktopWallpaper(filePath: String) -> Bool
     func pruneCache(maxWallpapers: Int, currentWallpaperPath: String?)
     func clearCache(currentWallpaperPath: String?)
@@ -90,6 +91,10 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
     }
 
     public func setDesktopWallpaper(filePath: String) -> Bool {
+        return setDesktopWallpaper(filePath: filePath, mode: "Span")
+    }
+
+    public func setDesktopWallpaper(filePath: String, mode: String = "Span") -> Bool {
         guard FileManager.default.fileExists(atPath: filePath) else {
             Logger.error("Cannot set desktop wallpaper: file does not exist at \(filePath)")
             return false
@@ -101,16 +106,24 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
         let fileUrl = URL(fileURLWithPath: filePath)
         var anySuccess = false
         let screens = NSScreen.screens
-        Logger.info("Applying wallpaper to \(screens.count) screen(s): \(filePath)")
+        Logger.info("Applying wallpaper to \(screens.count) screen(s) [Mode: \(mode)]: \(filePath)")
 
         let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
             .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
             .allowClipping: true
         ]
 
+        var targetUrls: [URL] = []
+        if mode == "Span" && screens.count > 1 {
+            targetUrls = sliceImageForSpan(sourceUrl: fileUrl, screens: screens)
+        } else {
+            targetUrls = Array(repeating: fileUrl, count: screens.count)
+        }
+
         for (index, screen) in screens.enumerated() {
+            let screenUrl = index < targetUrls.count ? targetUrls[index] : fileUrl
             do {
-                try NSWorkspace.shared.setDesktopImageURL(fileUrl, for: screen, options: options)
+                try NSWorkspace.shared.setDesktopImageURL(screenUrl, for: screen, options: options)
                 Logger.info("Successfully set wallpaper on Screen \(index) [\(screen.localizedName)]")
                 anySuccess = true
             } catch {
@@ -125,6 +138,56 @@ public final class WallpaperService: WallpaperServiceProtocol, @unchecked Sendab
         }
 
         return anySuccess
+    }
+
+    private func sliceImageForSpan(sourceUrl: URL, screens: [NSScreen]) -> [URL] {
+        guard let imageSource = CGImageSourceCreateWithURL(sourceUrl as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil),
+              !screens.isEmpty else {
+            return Array(repeating: sourceUrl, count: screens.count)
+        }
+
+        var unionFrame = screens[0].frame
+        for s in screens.dropFirst() {
+            unionFrame = unionFrame.union(s.frame)
+        }
+
+        guard unionFrame.width > 0 && unionFrame.height > 0 else {
+            return Array(repeating: sourceUrl, count: screens.count)
+        }
+
+        let imgWidth = CGFloat(cgImage.width)
+        let imgHeight = CGFloat(cgImage.height)
+        var resultUrls: [URL] = []
+
+        for (index, screen) in screens.enumerated() {
+            let relX = max(0, (screen.frame.minX - unionFrame.minX) / unionFrame.width)
+            let relY = max(0, (unionFrame.maxY - screen.frame.maxY) / unionFrame.height)
+            let relW = min(1.0, screen.frame.width / unionFrame.width)
+            let relH = min(1.0, screen.frame.height / unionFrame.height)
+
+            let cropRect = CGRect(
+                x: relX * imgWidth,
+                y: relY * imgHeight,
+                width: relW * imgWidth,
+                height: relH * imgHeight
+            )
+
+            if let cropped = cgImage.cropping(to: cropRect) {
+                let targetUrl = cacheDirectory.appendingPathComponent("span_screen_\(index).jpg")
+                if let dest = CGImageDestinationCreateWithURL(targetUrl as CFURL, "public.jpeg" as CFString, 1, nil) {
+                    CGImageDestinationAddImage(dest, cropped, nil)
+                    if CGImageDestinationFinalize(dest) {
+                        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: targetUrl.path)
+                        resultUrls.append(targetUrl)
+                        continue
+                    }
+                }
+            }
+            resultUrls.append(sourceUrl)
+        }
+
+        return resultUrls
     }
 
     public func pruneCache(maxWallpapers: Int, currentWallpaperPath: String?) {

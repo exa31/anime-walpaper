@@ -34,6 +34,9 @@ public class AppConfig
     [JsonPropertyName("showNotifications")]
     public bool ShowNotifications { get; set; } = true;
 
+    [JsonPropertyName("multiMonitorMode")]
+    public string MultiMonitorMode { get; set; } = "Span"; // "Span", "PerMonitor", "Duplicate"
+
     public AppConfig Clone()
     {
         return (AppConfig)MemberwiseClone();

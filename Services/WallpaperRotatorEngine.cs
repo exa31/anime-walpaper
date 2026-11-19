@@ -275,7 +275,7 @@ public class WallpaperRotatorEngine
             }
 
             SetStatus("Applying wallpaper...");
-            bool applied = _wallpaperService.SetDesktopWallpaper(downloadedPath);
+            bool applied = _wallpaperService.SetDesktopWallpaper(downloadedPath, _configService.Config.MultiMonitorMode);
 
             if (!applied)
             {

@@ -14,7 +14,8 @@ public interface IWallpaperService
 {
     string CacheDirectory { get; }
     Task<string?> DownloadWallpaperAsync(string id, string imageUrl, CancellationToken cancellationToken = default);
-    bool SetDesktopWallpaper(string filePath);
+    bool SetDesktopWallpaper(string filePath, string mode = "Span");
+    bool SetDesktopWallpaperForMonitor(int monitorIndex, string filePath);
     void PruneCache(int maxWallpapers, string? currentWallpaperPath);
     void ClearCache(string? currentWallpaperPath);
     void OpenCacheFolder();
@@ -140,7 +141,57 @@ public class WallpaperService : IWallpaperService
         }
     }
 
-    public bool SetDesktopWallpaper(string filePath)
+    [ComImport, Guid("C2CF3116-46EF-4F01-98EC-68422800DCEF")]
+    private class DesktopWallpaperCoClass { }
+
+    [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IDesktopWallpaper
+    {
+        void SetWallpaper(
+            [MarshalAs(UnmanagedType.LPWStr)] string? monitorID,
+            [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
+
+        [return: MarshalAs(UnmanagedType.LPWStr)]
+        string GetWallpaper(
+            [MarshalAs(UnmanagedType.LPWStr)] string? monitorID);
+
+        [return: MarshalAs(UnmanagedType.LPWStr)]
+        string GetMonitorDevicePathAt(uint monitorIndex);
+
+        [return: MarshalAs(UnmanagedType.U4)]
+        uint GetMonitorDevicePathCount();
+
+        void GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorID, out IntPtr rect);
+
+        void SetBackgroundColor(uint color);
+        uint GetBackgroundColor();
+
+        void SetPosition(DesktopWallpaperPosition position);
+        DesktopWallpaperPosition GetPosition();
+
+        void SetSlideshow(IntPtr items);
+        IntPtr GetSlideshow();
+
+        void SetSlideshowOptions(uint options, uint slideshowTick);
+        void GetSlideshowOptions(out uint options, out uint slideshowTick);
+
+        void AdvanceSlideshow([MarshalAs(UnmanagedType.LPWStr)] string? monitorID, uint direction);
+        uint GetStatus();
+        bool Enable();
+    }
+
+    public enum DesktopWallpaperPosition
+    {
+        Center = 0,
+        Tile = 1,
+        Stretch = 2,
+        Fit = 3,
+        Fill = 4,
+        Span = 5
+    }
+
+    public bool SetDesktopWallpaper(string filePath, string mode = "Span")
     {
         try
         {
@@ -150,13 +201,39 @@ public class WallpaperService : IWallpaperService
                 return false;
             }
 
-            // Configure registry for Fill mode (10 = Fill, 0 = Tile)
+            // Attempt via IDesktopWallpaper COM interface
+            IDesktopWallpaper? desktopWallpaper = null;
+            try
+            {
+                desktopWallpaper = (IDesktopWallpaper)new DesktopWallpaperCoClass();
+                var position = mode.Equals("Span", StringComparison.OrdinalIgnoreCase) 
+                    ? DesktopWallpaperPosition.Span 
+                    : DesktopWallpaperPosition.Fill;
+
+                desktopWallpaper.SetPosition(position);
+                desktopWallpaper.SetWallpaper(null, filePath);
+                Logger.Info($"Desktop wallpaper applied via IDesktopWallpaper (Mode: {mode}): {Path.GetFileName(filePath)}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"IDesktopWallpaper COM failed ({ex.Message}), falling back to SystemParametersInfo.");
+            }
+            finally
+            {
+                if (desktopWallpaper != null)
+                {
+                    Marshal.ReleaseComObject(desktopWallpaper);
+                }
+            }
+
+            // Fallback via registry + SystemParametersInfo
             try
             {
                 using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", true);
                 if (key != null)
                 {
-                    key.SetValue("WallpaperStyle", "10"); // Fill
+                    key.SetValue("WallpaperStyle", mode.Equals("Span", StringComparison.OrdinalIgnoreCase) ? "22" : "10");
                     key.SetValue("TileWallpaper", "0");
                 }
             }
@@ -165,7 +242,6 @@ public class WallpaperService : IWallpaperService
                 Logger.Warn($"Could not update Desktop registry style: {ex.Message}");
             }
 
-            // Call SystemParametersInfo
             int result = SystemParametersInfo(
                 SPI_SETDESKWALLPAPER,
                 0,
@@ -189,6 +265,35 @@ public class WallpaperService : IWallpaperService
         {
             Logger.Error($"Failed to set desktop wallpaper: {filePath}", ex);
             return false;
+        }
+    }
+
+    public bool SetDesktopWallpaperForMonitor(int monitorIndex, string filePath)
+    {
+        IDesktopWallpaper? desktopWallpaper = null;
+        try
+        {
+            if (!File.Exists(filePath)) return false;
+            desktopWallpaper = (IDesktopWallpaper)new DesktopWallpaperCoClass();
+            uint count = desktopWallpaper.GetMonitorDevicePathCount();
+            if (monitorIndex >= 0 && monitorIndex < count)
+            {
+                string monitorId = desktopWallpaper.GetMonitorDevicePathAt((uint)monitorIndex);
+                desktopWallpaper.SetPosition(DesktopWallpaperPosition.Fill);
+                desktopWallpaper.SetWallpaper(monitorId, filePath);
+                Logger.Info($"Set wallpaper for monitor {monitorIndex} ({monitorId}): {Path.GetFileName(filePath)}");
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Failed to set wallpaper for monitor {monitorIndex}: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            if (desktopWallpaper != null) Marshal.ReleaseComObject(desktopWallpaper);
         }
     }
 

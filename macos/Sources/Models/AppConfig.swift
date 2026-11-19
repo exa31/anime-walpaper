@@ -11,6 +11,7 @@ public struct AppConfig: Codable, Equatable {
     public var startWithMac: Bool
     public var maxCachedWallpapers: Int
     public var showNotifications: Bool
+    public var multiMonitorMode: String // "Span", "PerMonitor", "Duplicate"
 
     public init(
         wallhavenApiKey: String = "",
@@ -22,7 +23,8 @@ public struct AppConfig: Codable, Equatable {
         random: Bool = true,
         startWithMac: Bool = false,
         maxCachedWallpapers: Int = 20,
-        showNotifications: Bool = true
+        showNotifications: Bool = true,
+        multiMonitorMode: String = "Span"
     ) {
         self.wallhavenApiKey = wallhavenApiKey
         self.query = query
@@ -34,5 +36,6 @@ public struct AppConfig: Codable, Equatable {
         self.startWithMac = startWithMac
         self.maxCachedWallpapers = maxCachedWallpapers
         self.showNotifications = showNotifications
+        self.multiMonitorMode = multiMonitorMode
     }
 }
